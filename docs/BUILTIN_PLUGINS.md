@@ -2,7 +2,7 @@
 
 Built-in plugins（内置插件）are plugins bundled with the installed desktop app and treated as part of the application itself. They are marked with `"internal": true` in `src-tauri/resources/preset-plugins.json`, fetched at build time by `scripts/prebuild.ts` into `src-tauri/resources/preset-plugins/<id>/`, shipped with the installer via `bundle.resources`, and auto-installed (and auto-healed) at service start by `src-tauri/src/service/plugin/internal.rs`.
 
-Examples today: `dsh-tauri`, `dsh-tauri-ui`, `dsh-tauri-worktree`, `dsh-tauri-panel`, and `dsh-tauri-panel-extension`.
+Examples today: `dsh-tauri`, `dsh-tauri-ui`, `dsh-tauri-worktree`, `dsh-tauri-panel`, `dsh-tauri-panel-extension`, and `dsh-codebuddy-models`.
 
 ## Built-in vs. normal preset plugin
 
