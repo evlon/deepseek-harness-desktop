@@ -58,7 +58,7 @@
   },
   {
     "id": "dsh-codebuddy-models",
-    "spec": "dsh-codebuddy-models@0.1.0",
+    "spec": "dsh-codebuddy-models@0.1.3",
     "internal": true,
     "name": "DSH CodeBuddy Models",
     "description": "CodeBuddy/WorkBuddy models bundle for DeepSeek Harness (dsh): reads the local desktop login and serves the CodeBuddy subscription as a native provider route in the model picker",
