@@ -39,11 +39,28 @@
   },
   {
     "id": "dsh-tauri-panel",
-    "spec": "dsh-tauri-panel@0.1.1",
+    "spec": "dsh-tauri-panel@0.3.3",
     "internal": true,
     "name": "DSH Tauri Panel",
     "description": "Upper panel UI for the desktop sidebar: compact logo row (32px), a panel area holding the New Session menu item plus third-party panel items (sidebar.panel.action protocol slot).",
     "repoUrl": "https://github.com/dsh-tauri-desk/dsh-tauri-panel",
+    "recommended": true
+  },
+  {
+    "id": "dsh-codebuddy-models",
+    "spec": "dsh-codebuddy-models@0.1.0",
+    "internal": true,
+    "name": "DSH CodeBuddy Models",
+    "description": "CodeBuddy/WorkBuddy models bundle for DeepSeek Harness (dsh): reads the local desktop login and serves the CodeBuddy subscription as a native provider route in the model picker",
+    "repoUrl": "https://github.com/evlon/dsh-codebuddy-models",
+    "recommended": true
+  },
+  {
+    "id": "dsh-matrix-agent",
+    "spec": "dsh-matrix-agent@0.1.0",
+    "name": "DSH Matrix Agent",
+    "description": "Matrix agent bridge for DeepSeek Harness (dsh): multi-twin per-room agent sessions, in-chat approval, media/rich-text/reply/edit-aware message intake",
+    "repoUrl": "https://github.com/evlon/dsh-matrix-agent",
     "recommended": true
   },
   {

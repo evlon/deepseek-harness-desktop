@@ -2,7 +2,7 @@
 
 内置插件（built-in plugin）是指随安装包分发、被视作应用本身一部分的插件。它们在 `src-tauri/resources/preset-plugins.json` 中标记 `"internal": true`，由 `scripts/prebuild.ts` 在构建期拉取到 `src-tauri/resources/preset-plugins/<id>/`，随 `bundle.resources` 一并打进安装包，并在服务启动时由 `src-tauri/src/service/plugin/internal.rs` 自动安装（并自愈）。
 
-目前的内置插件：`dsh-tauri`、`dsh-tauri-ui`。
+目前的内置插件：`dsh-tauri`、`dsh-tauri-ui`、`dsh-tauri-worktree`、`dsh-tauri-panel`、`dsh-codebuddy-models`。
 
 ## 内置插件 vs. 普通预装插件
 

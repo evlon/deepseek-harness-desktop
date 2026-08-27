@@ -223,6 +223,20 @@ pub async fn install(app_handle: &AppHandle, ids: &[String]) -> Result<(), Strin
         }
     }
 
+    // dsh-matrix-agent 上游发布缺陷修复：npm 包的 `files` 白名单声明了
+    // `cordis.patch.yml`（`dsh.bundle.patch` 指向它），但该文件在仓库里被
+    // `.gitignore` 排除、从未入库，因此发布产物缺失——`dsh-app-boot` 在加载
+    // bundle 层时对缺失的声明 patch 会**直接抛错**（loadOverlayPatches：
+    // "failed to read overlay ... ENOENT"），服务无法启动。此处安装成功后
+    // 补写一个安全的占位 patch（`disabled: true`：loader 跳过禁用行、启动
+    // 核验也放行 fiber-less 禁用项），保证用户勾选安装后应用可正常启动；
+    // 用户配置好 Matrix token 后可在 profile 的 patch 层自行启用。
+    if ids.iter().any(|id| id == "dsh-matrix-agent") {
+        if let Err(e) = ensure_matrix_agent_bundle_patch(app_handle) {
+            log::warn!("matrix agent bundle patch ensure failed after install: {e}");
+        }
+    }
+
     // 告知用户安装阶段结束；随后的服务重启由前端 continueAfterPreinstall 负责
     let _ = window.emit(
         PREINSTALL_LOG_EVENT,
@@ -306,6 +320,70 @@ fn verify_installed_products(
         }
     }
     Err(detail)
+}
+
+/// dsh-matrix-agent 的 bundle 层 patch 文件名（`dsh.bundle.patch` 声明值）。
+const MATRIX_AGENT_PATCH_FILE: &str = "cordis.patch.yml";
+
+/// 安装 `dsh-matrix-agent` 后补齐其 bundle 层 patch（上游发布缺陷自愈）。
+///
+/// 上游仓库把 `cordis.patch.yml` 写进了 `.gitignore`（未入库），npm 发布产物
+/// 缺失该文件——但 `package.json` 的 `dsh.bundle.patch` 仍指向它，`dsh-app-boot`
+/// 加载 bundle 层时对缺失的声明 patch 直接抛错（`loadOverlayPatches` → ENOENT），
+/// 服务无法启动。安装成功后核验 `node_modules/dsh-matrix-agent/cordis.patch.yml`：
+/// 已存在（上游修复 / 本地 link 源码）则跳过；缺失则补写安全的占位 patch——
+/// 顶层数组一个 `disabled: true` 的 insert 行：loader 对禁用行直接跳过
+/// （`assertEntriesLoaded` 也放行 fiber-less 的禁用项），应用可正常启动；
+/// 用户配置好 Matrix token 后，在 profile 的 `cordis.patch.yml` 覆盖
+/// `matrix` 行的 config 即可启用（patch 按行 id 覆盖，行内 `config` 整体替换）。
+///
+/// 供 install（安装/升级后）与 verify（启动完整性修复后）共用：两者都可能
+/// 重新拉取 npm 产物而再次丢掉该文件，统一在此补写，保证 bundle 层声明
+/// 的文件恒存在（缺文件 = 启动失败，属必须自愈的发布缺陷）。
+pub(crate) fn ensure_matrix_agent_bundle_patch(app_handle: &AppHandle) -> Result<(), String> {
+    let patch_path = profile_dir(app_handle)
+        .join("node_modules")
+        .join("dsh-matrix-agent")
+        .join(MATRIX_AGENT_PATCH_FILE);
+    ensure_matrix_agent_bundle_patch_at(&patch_path)
+}
+
+/// 在给定路径上补写 dsh-matrix-agent 的 bundle 层占位 patch（纯路径版，便于单测）。
+///
+/// 已存在（上游修复 / 本地 link 源码）则跳过；缺失则写入占位内容。
+fn ensure_matrix_agent_bundle_patch_at(patch_path: &Path) -> Result<(), String> {
+    if patch_path.is_file() {
+        return Ok(());
+    }
+    // 占位 patch：禁用挂载行，避免 bundle 层声明缺失文件导致启动失败。
+    // 注意：不要把任何真实的 Matrix access token 写进占位文件。
+    let placeholder = concat!(
+        "# dsh-matrix-agent bundle layer (desktop-app placeholder).\n",
+        "# 上游 npm 包缺失本文件（.gitignore 误排除、未入库）；桌面端安装后补写。\n",
+        "# 配置 Matrix token 前保持禁用：loader 跳过 disabled 行，应用正常启动。\n",
+        "# 启用：把下方 `disabled: true` 改为 `disabled: false`，并在 config 里填入\n",
+        "# homeserverUrl / userId / accessToken（或留空 accessToken 走 DSH_MATRIX_TOKEN\n",
+        "# 环境变量），然后重启服务。\n",
+        "- insert:\n",
+        "    - id: matrix\n",
+        "      name: dsh-matrix-agent\n",
+        "      disabled: true\n",
+        "      config:\n",
+        "        homeserverUrl: ''\n",
+        "        userId: ''\n",
+        "        accessToken: ''\n",
+    );
+    if let Some(dir) = patch_path.parent() {
+        std::fs::create_dir_all(dir)
+            .map_err(|e| format!("MATRIX_PATCH_MKDIR: {e}"))?;
+    }
+    std::fs::write(&patch_path, placeholder)
+        .map_err(|e| format!("MATRIX_PATCH_WRITE: {}: {e}", patch_path.display()))?;
+    log::info!(
+        "Restored dsh-matrix-agent bundle patch placeholder at {}",
+        patch_path.display()
+    );
+    Ok(())
 }
 
 /// 为 exit 0 但无落盘产物的假成功生成可操作诊断：明确缺失插件、预期清单路径，
@@ -619,6 +697,13 @@ async fn run_single_plugin_command(
     if action == "remove" && id == "dsh-win-terminal-inspector" {
         if let Err(e) = workflow::win_inspector::apply(app_handle) {
             log::warn!("win inspector patch prune failed after remove: {e}");
+        }
+    }
+    // 升级 dsh-matrix-agent 同样会重新拉取 npm 产物，可能再次丢掉上游缺失的
+    // bundle patch 文件（见 install 路径的注释）；升级后统一补写/保留占位。
+    if action == "update" && id == "dsh-matrix-agent" {
+        if let Err(e) = ensure_matrix_agent_bundle_patch(app_handle) {
+            log::warn!("matrix agent bundle patch ensure failed after update: {e}");
         }
     }
     log::info!("dsh plugin {action} succeeded for {id}");
@@ -1321,7 +1406,7 @@ pub(crate) fn harness_prefer_bundled_pnpm(app_handle: &AppHandle) -> bool {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-    use super::{append_command_output, apply_allow_build_keys, collapse_allow_builds_duplicates, dep_path_to_name, extract_allow_line_key, extract_only_builds_git_name, git_transport_hint, normalize_git_spec, parse_allowlist_keys, parse_store_major_from_modules_yaml, preset_spec_for_install, shell_quote_spec, silent_install_failure_detail, PreinstallPluginInfo};
+    use super::{append_command_output, apply_allow_build_keys, collapse_allow_builds_duplicates, dep_path_to_name, ensure_matrix_agent_bundle_patch_at, extract_allow_line_key, extract_only_builds_git_name, git_transport_hint, normalize_git_spec, parse_allowlist_keys, parse_store_major_from_modules_yaml, preset_spec_for_install, shell_quote_spec, silent_install_failure_detail, MATRIX_AGENT_PATCH_FILE, PreinstallPluginInfo};
 
     /// 构造预设条目的测试助手（internal 由各用例显式指定）
     fn preset(id: &str, spec: &str, internal: bool) -> PreinstallPluginInfo {
@@ -1416,6 +1501,50 @@ mod tests {
         append_command_output(&mut output, "");
 
         assert_eq!(output, "ERR_PNPM_IGNORED_BUILDS");
+    }
+
+    /// dsh-matrix-agent 上游 npm 包缺失 cordis.patch.yml：占位补写应生成
+    /// 一个 disabled 的 insert 行（loader 跳过禁用行，启动不失败），且绝不
+    /// 包含任何真实 token。
+    #[test]
+    fn matrix_agent_patch_written_when_missing() {
+        let dir = std::env::temp_dir().join(format!("dsh-matrix-patch-{}", std::process::id()));
+        let patch = dir.join("node_modules").join("dsh-matrix-agent").join(MATRIX_AGENT_PATCH_FILE);
+        std::fs::create_dir_all(patch.parent().unwrap()).unwrap();
+
+        ensure_matrix_agent_bundle_patch_at(&patch).unwrap();
+        let content = std::fs::read_to_string(&patch).unwrap();
+        assert!(content.contains("- insert:"));
+        assert!(content.contains("id: matrix"));
+        assert!(content.contains("name: dsh-matrix-agent"));
+        assert!(content.contains("disabled: true"));
+        // 占位不得含真实 access token（本地开发者的 token 等敏感值）
+        assert!(!content.contains("accessToken: '9EQq"));
+        assert!(!content.contains("im-ipm.ict.cmcc"));
+
+        // 幂等：已存在则跳过，内容不变
+        let before = std::fs::read_to_string(&patch).unwrap();
+        ensure_matrix_agent_bundle_patch_at(&patch).unwrap();
+        assert_eq!(std::fs::read_to_string(&patch).unwrap(), before);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 已存在（上游修复 / 本地 link 源码自带 patch）时保持原文件不动。
+    #[test]
+    fn matrix_agent_patch_preserves_existing_file() {
+        let dir = std::env::temp_dir().join(format!("dsh-matrix-patch-exists-{}", std::process::id()));
+        let patch = dir.join("node_modules").join("dsh-matrix-agent").join(MATRIX_AGENT_PATCH_FILE);
+        std::fs::create_dir_all(patch.parent().unwrap()).unwrap();
+        std::fs::write(&patch, "- insert:\n    - id: matrix\n      name: dsh-matrix-agent\n").unwrap();
+
+        ensure_matrix_agent_bundle_patch_at(&patch).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&patch).unwrap(),
+            "- insert:\n    - id: matrix\n      name: dsh-matrix-agent\n"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

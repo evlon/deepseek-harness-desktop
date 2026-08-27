@@ -115,6 +115,15 @@ pub(crate) async fn ensure_preset_plugins(app_handle: &AppHandle) -> Result<(), 
     let still_missing = missing_plugin_ids(&presets, &dependencies, &bundles, &node_modules);
     if still_missing.is_empty() {
         log::info!("preset plugin integrity repaired via pnpm install: {missing:?}");
+        // dsh-matrix-agent 的 npm 产物可能缺失其 bundle patch 文件（上游
+        // .gitignore 误排除、未入库，见 install::ensure_matrix_agent_bundle_patch），
+        // `pnpm install` 重建后同样需要补写占位，否则启动加载 bundle 层会因
+        // 声明文件缺失而失败。
+        if presets.iter().any(|p| p.id == "dsh-matrix-agent") {
+            if let Err(e) = super::install::ensure_matrix_agent_bundle_patch(app_handle) {
+                log::warn!("matrix agent bundle patch ensure failed after integrity repair: {e}");
+            }
+        }
         return Ok(());
     }
     let detail = format!(
