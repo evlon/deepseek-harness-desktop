@@ -39,6 +39,10 @@ fn windows_drag_browser_args() -> &'static str {
 
 /// setup app
 pub fn setup(app_handle: tauri::AppHandle) {
+    // 加载用户可编辑的外部部署配置（$DSH_HOME/desktop-config.json，覆盖镜像/包源
+    // 地址）。必须最早执行，后续所有 URL 解析（下载/插件安装）都依赖它。
+    crate::config::set_external_config(&app_handle);
+
     // 启动前清扫上次崩溃残留的孤儿 Harness（端口/PID 双重确认，见
     // workflow::sweep_orphan_harness），避免新实例一路漂移端口
     crate::service::workflow::sweep_orphan_harness(&app_handle);
@@ -505,6 +509,8 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         crate::bridge::set_language,
         crate::bridge::toggle_sidebar,
         crate::bridge::get_dsh_theme,
+        crate::bridge::get_accel_config,
+        crate::bridge::update_accel_config,
         crate::bridge::check_desktop_update,
         crate::bridge::download_desktop_update,
         crate::bridge::open_desktop_installer,

@@ -8,7 +8,8 @@
     "repoUrl": "https://github.com/clearkurt/dsh-win-terminal-inspector",
     "recommended": false,
     "fix": true,
-    "winOnly": true
+    "winOnly": true,
+    "winInspector": true
   },
   {
     "id": "dsh-tauri",
@@ -70,7 +71,8 @@
     "name": "DSH Matrix Agent",
     "description": "Matrix agent bridge for DeepSeek Harness (dsh): multi-twin per-room agent sessions, in-chat approval, media/rich-text/reply/edit-aware message intake",
     "repoUrl": "https://github.com/evlon/dsh-matrix-agent",
-    "recommended": true
+    "recommended": true,
+    "postInstallPatch": "matrix-agent"
   },
   {
     "id": "dshmarket",

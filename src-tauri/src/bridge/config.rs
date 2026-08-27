@@ -81,3 +81,38 @@ pub async fn toggle_sidebar() -> Result<bool, String> {
 pub fn get_dsh_theme(app_handle: AppHandle) -> config::DshTheme {
     config::get_dsh_theme(&app_handle)
 }
+
+/// 当前插件安装的加速配置（npm registry 源 + GitHub 中转策略）。
+#[tauri::command]
+pub async fn get_accel_config(app_handle: AppHandle) -> Result<config::AccelConfig, String> {
+    Ok(config::AccelConfig::from_setting(&config::get_store_dat_setting(&app_handle)))
+}
+
+/// 更新插件安装的加速配置并落库；随后把解析出的 npm registry 写入 profile
+/// `.npmrc`，使下一次 `dsh plugin` 拉包即走所选源。
+#[tauri::command]
+pub async fn update_accel_config(
+    app_handle: AppHandle,
+    npm_registry_mode: Option<String>,
+    npm_registry_custom: Option<String>,
+    gh_accel_mode: Option<String>,
+    gh_accel_custom: Option<String>,
+) -> Result<config::AccelConfig, String> {
+    let mut setting = config::get_store_dat_setting(&app_handle);
+    if let Some(mode) = npm_registry_mode {
+        setting.npm_registry_mode = Some(mode);
+    }
+    if let Some(url) = npm_registry_custom {
+        setting.npm_registry_custom = Some(url);
+    }
+    if let Some(mode) = gh_accel_mode {
+        setting.gh_accel_mode = Some(mode);
+    }
+    if let Some(custom) = gh_accel_custom {
+        setting.gh_accel_custom = Some(custom);
+    }
+    config::set_store_dat_setting(&app_handle, setting.clone());
+    // 立即把解析出的 registry 写进 profile .npmrc（幂等），无需等下次启动
+    crate::service::plugin::ensure_profile_npmrc(&app_handle)?;
+    Ok(config::AccelConfig::from_setting(&setting))
+}

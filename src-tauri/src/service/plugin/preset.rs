@@ -46,6 +46,16 @@ pub struct PreinstallPluginInfo {
     /// 仅 Windows 平台列出
     #[serde(default)]
     pub win_only: bool,
+    /// 安装/升级后的数据驱动修复动作。当前支持 `matrix-agent`：该插件 npm 包
+    /// 缺失 `cordis.patch.yml`（上游发布缺陷），安装/升级/启动完整性修复后需
+    /// 补写安全的占位 patch（见 `install::ensure_matrix_agent_bundle_patch`）。
+    /// 以能力字段驱动，避免在 Rust 代码里散落 `id == "dsh-matrix-agent"`。
+    #[serde(default)]
+    pub post_install_patch: Option<String>,
+    /// 该插件是 Windows 极简模式修复项，需要写入 `cordis.patch.yml` 挂载行并
+    /// 生成最小 preset（见 `workflow::win_inspector`）。数据驱动，不再按 id 特判。
+    #[serde(default)]
+    pub win_inspector: bool,
 }
 
 /// 在资源根目录下查找预设清单：先探测扁平布局（exe 同级），再探测
@@ -79,6 +89,11 @@ fn preset_plugins_path(app_handle: &AppHandle) -> Option<PathBuf> {
 
 /// 内置插件资源目录名（相对资源根的固定前缀）
 const BUNDLED_PLUGINS_DIR: &str = "preset-plugins";
+
+/// 按 id 查找预设条目（数据驱动特判用）。不在清单里的 id 返回 None。
+pub(crate) fn find_preset(app_handle: &AppHandle, id: &str) -> Option<PreinstallPluginInfo> {
+    load_presets(app_handle).into_iter().find(|p| p.id == id)
+}
 
 /// 在资源根目录下定位某内置插件的捆绑目录：与 [`find_in_resource_root`] 相同的
 /// 布局探测——先 `resources/` 子目录（安装包/开发产物按 `bundle.resources` 前缀

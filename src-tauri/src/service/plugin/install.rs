@@ -216,22 +216,24 @@ pub async fn install(app_handle: &AppHandle, ids: &[String]) -> Result<(), Strin
     // 允许重试，而不是误报「已安装」。已落盘的插件在上一步被核验并清除历史错误。
     verify_installed_products(app_handle, ids, &preset_map, &last_output)?;
 
-    // Windows 极简模式专项修复
-    if ids.iter().any(|id| id == "dsh-win-terminal-inspector") {
+    // Windows 极简模式专项修复：数据驱动——凡清单里声明 `winInspector: true` 的
+    // 预设（当前为 dsh-win-terminal-inspector）安装后都写 cordis.patch.yml 挂载
+    // 行并生成最小 preset（见 workflow::win_inspector）。
+    if ids.iter().any(|id| preset_map.get(id.as_str()).is_some_and(|p| p.win_inspector)) {
         if let Err(e) = workflow::win_inspector::apply(app_handle) {
             log::warn!("win inspector apply failed after install: {e}");
         }
     }
 
-    // dsh-matrix-agent 上游发布缺陷修复：npm 包的 `files` 白名单声明了
-    // `cordis.patch.yml`（`dsh.bundle.patch` 指向它），但该文件在仓库里被
-    // `.gitignore` 排除、从未入库，因此发布产物缺失——`dsh-app-boot` 在加载
-    // bundle 层时对缺失的声明 patch 会**直接抛错**（loadOverlayPatches：
-    // "failed to read overlay ... ENOENT"），服务无法启动。此处安装成功后
-    // 补写一个安全的占位 patch（`disabled: true`：loader 跳过禁用行、启动
-    // 核验也放行 fiber-less 禁用项），保证用户勾选安装后应用可正常启动；
-    // 用户配置好 Matrix token 后可在 profile 的 patch 层自行启用。
-    if ids.iter().any(|id| id == "dsh-matrix-agent") {
+    // 数据驱动的「安装后补写 patch」：凡清单里声明 `postInstallPatch: matrix-agent`
+    // 的预设（当前为 dsh-matrix-agent）安装后都补写 bundle 层占位 patch。该插件
+    // 上游发布缺陷：npm 包的 `files` 白名单声明了 `cordis.patch.yml`（`dsh.bundle.patch`
+    // 指向它），但文件在仓库被 `.gitignore` 排除、从未入库，发布产物缺失——
+    // `dsh-app-boot` 加载 bundle 层时对缺失声明 patch **直接抛错**（ENOENT），服务
+    // 无法启动。补写安全的占位 patch（`disabled: true`：loader 跳过禁用行、启动
+    // 核验也放行 fiber-less 禁用项），用户配置好 Matrix token 后可在 profile 的
+    // patch 层自行启用。
+    if ids.iter().any(|id| preset_map.get(id.as_str()).is_some_and(|p| p.post_install_patch.as_deref() == Some("matrix-agent"))) {
         if let Err(e) = ensure_matrix_agent_bundle_patch(app_handle) {
             log::warn!("matrix agent bundle patch ensure failed after install: {e}");
         }
@@ -472,6 +474,26 @@ pub(crate) fn build_plugin_envs(app_handle: &AppHandle, prefer_bundled_pnpm: boo
     if let Ok(joined) = std::env::join_paths(paths) {
         envs.insert("PATH".to_string(), joined.to_string_lossy().into_owned());
     }
+
+    // 按「下载插件」界面加速配置注入 npm registry 与 GitHub 中转（仅对子进程
+    // 生效，不污染用户系统配置）：
+    // - `npm_config_registry` 让 pnpm 从加速/内网源拉 npm 包（等价于 .npmrc 的 registry）
+    // - `GIT_CONFIG_COUNT` 系列把 `https://github.com/` 重写到中转前缀（insteadOf），
+    //   使 `dsh plugin add github:...` 的 git clone 走加速/内网 git 镜像
+    let accel_setting = crate::config::get_store_dat_setting(app_handle);
+    let npm_registry = crate::config::npm_registry_url(&accel_setting);
+    if !npm_registry.is_empty() {
+        envs.insert("npm_config_registry".to_string(), npm_registry);
+    }
+    if let Some(prefix) = crate::config::gh_mirror_prefix(&accel_setting) {
+        // git 通过环境变量注入 insteadOf：url.<prefix>.insteadOf = https://github.com/
+        envs.insert("GIT_CONFIG_COUNT".to_string(), "1".to_string());
+        envs.insert(
+            "GIT_CONFIG_KEY_0".to_string(),
+            format!("url.{prefix}.insteadof"),
+        );
+        envs.insert("GIT_CONFIG_VALUE_0".to_string(), "https://github.com/".to_string());
+    }
     envs
 }
 
@@ -684,18 +706,25 @@ async fn run_single_plugin_command(
         ));
     }
 
-    // 成功：清除历史错误；卸载 win-terminal-inspector 时顺带清理 patch 挂载
+    // 成功：清除历史错误。数据驱动：卸载清单里 `winInspector: true` 的预设
+    // （当前为 dsh-win-terminal-inspector）时顺带清理 patch 挂载。
     if let Err(e) = errors::clear(app_handle, id) {
         log::warn!("failed to clear plugin error for {id}: {e}");
     }
-    if action == "remove" && id == "dsh-win-terminal-inspector" {
+    let preset = super::preset::find_preset(app_handle, id);
+    if action == "remove" && preset.as_ref().is_some_and(|p| p.win_inspector) {
         if let Err(e) = workflow::win_inspector::apply(app_handle) {
             log::warn!("win inspector patch prune failed after remove: {e}");
         }
     }
-    // 升级 dsh-matrix-agent 同样会重新拉取 npm 产物，可能再次丢掉上游缺失的
-    // bundle patch 文件（见 install 路径的注释）；升级后统一补写/保留占位。
-    if action == "update" && id == "dsh-matrix-agent" {
+    // 数据驱动：升级清单里 `postInstallPatch: matrix-agent` 的预设（当前为
+    // dsh-matrix-agent）会重新拉取 npm 产物，可能再次丢掉上游缺失的 bundle
+    // patch 文件；升级后统一补写/保留占位（见 install 路径的注释）。
+    if action == "update"
+        && preset
+            .as_ref()
+            .is_some_and(|p| p.post_install_patch.as_deref() == Some("matrix-agent"))
+    {
         if let Err(e) = ensure_matrix_agent_bundle_patch(app_handle) {
             log::warn!("matrix agent bundle patch ensure failed after update: {e}");
         }
@@ -1454,6 +1483,8 @@ mod tests {
             default_checked: false,
             win_only: false,
             internal,
+            post_install_patch: None,
+            win_inspector: false,
         }
     }
 

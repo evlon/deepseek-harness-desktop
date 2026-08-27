@@ -173,8 +173,9 @@ async fn fetch_head_sha(client: &reqwest::Client, repo: &str) -> Option<String> 
 }
 
 /// npm registry `latest` dist-tag 版本（404/网络错误返回 None）。
-async fn fetch_npm_latest(client: &reqwest::Client, name: &str) -> Option<String> {
-    let url = format!("https://registry.npmjs.org/{}/latest", encode_registry_name(name));
+/// `registry` 为末尾带 `/` 的完整 registry URL（按「下载插件」界面加速配置解析）。
+async fn fetch_npm_latest(client: &reqwest::Client, name: &str, registry: &str) -> Option<String> {
+    let url = format!("{registry}{}/latest", encode_registry_name(name));
     let v = fetch_json(client, &url).await?;
     v.get("version")?.as_str().map(String::from)
 }
@@ -186,6 +187,7 @@ async fn compute_update(
     spec: &str,
     installed_version: Option<&str>,
     locked: &HashMap<String, String>,
+    registry: &str,
 ) -> UpdateInfo {
     if spec.starts_with("link:") || spec.starts_with("file:") {
         return UpdateInfo { update_available: false, latest: None };
@@ -200,7 +202,7 @@ async fn compute_update(
         };
     }
 
-    let latest = fetch_npm_latest(client, id).await;
+    let latest = fetch_npm_latest(client, id, registry).await;
     let update_available = match (installed_version, latest.as_deref()) {
         (Some(i), Some(l)) => is_upgrade(i, l),
         _ => false,
@@ -238,6 +240,8 @@ pub async fn refresh(app_handle: &AppHandle) -> Result<Vec<DshPlugin>, String> {
     let mut plugins = super::watch::list(app_handle);
     let specs = read_specs(app_handle);
     let locked = read_locked_commits(&profile_dir(app_handle));
+    // 按「下载插件」界面加速配置解析 npm registry（auto 按地域 / 官方 / npmmirror / 内网）
+    let registry = crate::config::npm_registry_url(&crate::config::get_store_dat_setting(app_handle));
     let client = reqwest::Client::builder()
         .user_agent("deepseek-harness-desktop")
         .timeout(Duration::from_secs(10))
@@ -276,14 +280,15 @@ pub async fn refresh(app_handle: &AppHandle) -> Result<Vec<DshPlugin>, String> {
         }
     }
 
-    // 并行发起更新判定。`client`/`locked` 只在 `join_all` 期间存活，用引用而非 move
-    // 捕获（否则 FnMut 的 map 无法多次消费非 Copy 的它们）；`t` 是闭包参数、按 move
+    // 并行发起更新判定。`client`/`locked`/`registry` 只在 `join_all` 期间存活，用引用而非
+    // move 捕获（否则 FnMut 的 map 无法多次消费非 Copy 的它们）；`t` 是闭包参数、按 move
     // 进每个异步块（每个任务独立持有自己的键/下标）。
     let results = futures_util::future::join_all(tasks.into_iter().map(|t| {
         let c = &client;
         let lock = &locked;
+        let reg = &registry;
         async move {
-            let info = compute_update(c, &t.id, &t.spec, t.version.as_deref(), lock).await;
+            let info = compute_update(c, &t.id, &t.spec, t.version.as_deref(), lock, reg).await;
             (t.idx, t.key, info)
         }
     }))

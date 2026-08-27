@@ -45,6 +45,26 @@ pub struct Setting {
     /// 端口（3080/3081）。避免端口只增不减、一路从 3080 漂到 3084+（issue #91）。
     #[serde(default)]
     pub manual_port: Option<u16>,
+    /// npm 包源策略（插件安装走哪个 registry）：`auto` 按地域自动选择（大陆
+    /// npmmirror、海外官方），`official` 固定官方 npmjs.org，`npmmirror` 固定
+    /// 阿里镜像，`custom` 用 [`Setting::npm_registry_custom`] 自定义（含内网
+    /// Verdaccio 私服）。`None` = 从未配置，等同于 `auto`。
+    #[serde(default)]
+    pub npm_registry_mode: Option<String>,
+    /// `npm_registry_mode` 为 `custom` 时的 registry URL（如内网
+    /// `http://package.onecode.cmict.cloud/repository/npm-group/`）。
+    #[serde(default)]
+    pub npm_registry_custom: Option<String>,
+    /// GitHub 加速策略（git clone github: 插件 / GitHub Release 下载走哪个
+    /// 中转）：`auto` 按地域自动选择（大陆 ghfast.top、海外直连），`none` 直连
+    /// GitHub，`ghfast` 用 ghfast.top，`ghproxy` 用 ghproxy 通用中转，`custom`
+    /// 用 [`Setting::gh_accel_custom`] 自定义前缀（含内网 git 镜像）。
+    #[serde(default)]
+    pub gh_accel_mode: Option<String>,
+    /// `gh_accel_mode` 为 `custom` 时的 GitHub 中转前缀（如内网
+    /// `http://git-mirror.corp/`，将被拼为 `http://git-mirror.corp/https://github.com/`）。
+    #[serde(default)]
+    pub gh_accel_custom: Option<String>,
 }
 
 /// 默认档案：桌面端内置的 web 档案
@@ -82,6 +102,10 @@ impl Default for Setting {
             active_profile: default_active_profile(),
             active_core: None,
             manual_port: None,
+            npm_registry_mode: None,
+            npm_registry_custom: None,
+            gh_accel_mode: None,
+            gh_accel_custom: None,
         }
     }
 }

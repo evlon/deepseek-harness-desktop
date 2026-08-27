@@ -1,4 +1,6 @@
+mod accel;
 mod constants;
+mod external;
 mod format;
 pub mod i18n;
 mod region;
@@ -8,7 +10,9 @@ mod theme;
 mod utils;
 mod window_state;
 
+pub use accel::*;
 pub use constants::*;
+pub use external::*;
 pub use format::*;
 pub use region::*;
 pub use runtime::*;

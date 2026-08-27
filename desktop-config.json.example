@@ -1,0 +1,16 @@
+{
+  "_comment": "DeepSeek Harness 桌面端部署配置（用户可编辑，无需改代码）。放到 $DSH_HOME/desktop-config.json（默认 ~/.dsh/，debug 构建 ~/.dsh.dev/，DSH_HOME 环境变量优先）。所有字段可选：删除该键即用编译期默认。改后需重启应用生效。",
+  "_comment2": "npmRegistry: 覆盖插件安装的 npm 包源（auto 模式优先用），可填内网 Verdaccio。",
+  "npmRegistry": "",
+  "_comment3": "ghMirrorPrefix: 覆盖 GitHub 中转前缀（auto 模式优先用），可填内网 git 镜像。",
+  "ghMirrorPrefix": "",
+  "_comment4": "nodeMirrorBase / pnpmMirrorBase: 覆盖 Node / pnpm 下载镜像前缀。",
+  "nodeMirrorBase": "",
+  "pnpmMirrorBase": "",
+  "_comment5": "dshCoreUrl / dshMirrorCoreUrl: 覆盖打包 Harness 发行版直连 / 镜像前缀。",
+  "dshCoreUrl": "",
+  "dshMirrorCoreUrl": "",
+  "_comment6": "ghfastPrefix / ghproxyPrefix: 覆盖 GitHub Release 中转前缀（ghfast.top / ghproxy 缺省）。",
+  "ghfastPrefix": "",
+  "ghproxyPrefix": ""
+}

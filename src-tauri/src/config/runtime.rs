@@ -17,12 +17,23 @@ pub fn get_base_dir<R: Runtime>(app_handle: &AppHandle<R>) -> PathBuf {
         .expect("Failed to resolve app data directory")
 }
 
-/// Node.js 官方/镜像下载前缀：国内走 npmmirror，其他直连 nodejs.org
-fn node_base_url(region: Region) -> &'static str {
-    match region {
-        Region::Domestic => NODE_MIRROR_BASE_URL,
-        Region::Overseas => NODE_BASE_URL,
+/// Node.js 官方/镜像下载前缀：`desktop-config.json` 显式覆盖优先，否则国内走
+/// npmmirror、其他直连 nodejs.org。
+fn node_base_url(region: Region) -> String {
+    // 外部部署配置可显式覆盖镜像前缀（如内网 node 镜像）；仅在显式配置时生效，
+    // 缺省保持按地域自动选择。
+    if let Some(override_url) = super::external::node_mirror_base_override() {
+        return ensure_trailing_slash(override_url);
     }
+    match region {
+        Region::Domestic => NODE_MIRROR_BASE_URL.to_string(),
+        Region::Overseas => NODE_BASE_URL.to_string(),
+    }
+}
+
+/// 保证 URL 以 `/` 结尾（拼接文件名时避免粘连）。
+fn ensure_trailing_slash(s: String) -> String {
+    if s.ends_with('/') { s } else { format!("{s}/") }
 }
 
 /// Node.js 官方发行包文件名（按平台与架构）
@@ -46,15 +57,22 @@ pub fn get_node_download_url() -> Result<String, String> {
     Ok(format!("{}/{}/{}", node_base_url(detect_region()), NODE_VERSION, filename))
 }
 
-/// 打包的 DeepSeek Harness 发行版下载前缀：恒为 GitHub Release 官方直连，
-/// 作为首选下载源（镜像 ghfast.top 中转不稳定，仅作官方失败后的兜底）。
-fn dsh_core_base_url() -> &'static str {
-    DSH_CORE_URL
+/// 打包的 DeepSeek Harness 发行版下载前缀：`desktop-config.json` 显式覆盖优先
+/// （如内网 CDN），否则恒为 GitHub Release 官方直连，作为首选下载源。
+fn dsh_core_base_url() -> String {
+    if let Some(override_url) = super::external::dsh_core_url_override() {
+        return ensure_trailing_slash(override_url);
+    }
+    DSH_CORE_URL.to_string()
 }
 
-/// 打包的 DeepSeek Harness 发行版镜像下载前缀（ghfast.top 中转 GitHub Release）
-fn dsh_mirror_base_url() -> &'static str {
-    DSH_MIRROR_CORE_URL
+/// 打包的 DeepSeek Harness 发行版镜像下载前缀：外部覆盖优先，否则 ghfast.top
+/// 中转 GitHub Release。
+fn dsh_mirror_base_url() -> String {
+    if let Some(override_url) = super::external::dsh_mirror_core_url_override() {
+        return ensure_trailing_slash(override_url);
+    }
+    DSH_MIRROR_CORE_URL.to_string()
 }
 
 /// Harness 发行版资产文件名（按平台与架构）
@@ -93,8 +111,12 @@ pub fn get_dsh_download_urls() -> Result<Vec<String>, String> {
 
 /// 为任意 GitHub Release 资产 URL 生成 ghfast.top 镜像兜底地址
 /// （透传原 URL，下载内容一致，仍可做 SHA-256 完整性校验）。
+/// `desktop-config.json` 的 `ghfastPrefix` 可覆盖中转前缀（如内网 GitHub 镜像）。
 pub fn mirror_download_url(asset_url: &str) -> String {
-    format!("{DSH_MIRROR_PREFIX}{asset_url}")
+    let prefix = super::external::ghfast_prefix_override()
+        .map(ensure_trailing_slash)
+        .unwrap_or_else(|| DSH_MIRROR_PREFIX.to_string());
+    format!("{prefix}{asset_url}")
 }
 
 /// 指定 tag 的 DeepSeek Harness 发行版下载地址。
@@ -244,11 +266,15 @@ pub fn get_pnpm_binary_path<R: Runtime>(app_handle: &AppHandle<R>) -> PathBuf {
     get_pnpm_install_path(app_handle).join(PNPM_ENTRY_RELATIVE)
 }
 
-/// pnpm 官方/镜像下载前缀：国内走 npmmirror registry，其他直连 npmjs.org
-fn pnpm_base_url(region: Region) -> &'static str {
+/// pnpm 官方/镜像下载前缀：`desktop-config.json` 显式覆盖优先，否则国内走
+/// npmmirror registry、其他直连 npmjs.org。
+fn pnpm_base_url(region: Region) -> String {
+    if let Some(override_url) = super::external::pnpm_mirror_base_override() {
+        return ensure_trailing_slash(override_url);
+    }
     match region {
-        Region::Domestic => PNPM_MIRROR_BASE_URL,
-        Region::Overseas => PNPM_BASE_URL,
+        Region::Domestic => PNPM_MIRROR_BASE_URL.to_string(),
+        Region::Overseas => PNPM_BASE_URL.to_string(),
     }
 }
 

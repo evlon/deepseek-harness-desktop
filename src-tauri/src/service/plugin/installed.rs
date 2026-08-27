@@ -123,12 +123,25 @@ pub fn list(app_handle: &AppHandle) -> Vec<PreinstallPlugin> {
 }
 
 const NPMRC_KEY: &str = "confirmModulesPurge=false";
+/// npm registry 行前缀（`registry=<url>`，写入后 pnpm 从此源拉包）
+const NPMRC_REGISTRY_PREFIX: &str = "registry=";
+/// 官方 npm registry：与它相同则无需显式写入（pnpm 默认即此）
+const DEFAULT_REGISTRY: &str = "https://registry.npmjs.org/";
 
-/// 在给定 `.npmrc` 路径上写入 `confirmModulesPurge=false`（幂等合并）。
+/// 在给定 `.npmrc` 路径上幂等合并写入目标键。
 ///
-/// 拆出纯路径版便于单元测试（不依赖 AppHandle）；`ensure_profile_npmrc` 仅负责
-/// 把 profile 路径传进来。
-fn ensure_npmrc_at(npmrc_path: &PathBuf) -> Result<(), String> {
+/// 固定写入 `confirmModulesPurge=false`（pnpm 无 TTY 清理跳过确认）；当
+/// `registry` 传入非默认源（如 npmmirror / 内网私服）时额外写入 `registry=<url>`，
+/// 让 `dsh plugin` / dsh-market 拉包走加速源。二者都逐行精确匹配、保留既有
+/// 内容，绝不覆盖用户已有的 `.npmrc` 其它配置。
+///
+/// 拆出纯路径版便于单元测试（不依赖 AppHandle）；`ensure_profile_npmrc` 负责
+/// 解析 registry 并把 profile 路径传进来。
+fn ensure_npmrc_at(npmrc_path: &PathBuf, registry: Option<&str>) -> Result<(), String> {
+    let registry = registry
+        .map(str::trim)
+        .filter(|r| !r.is_empty() && *r != DEFAULT_REGISTRY);
+
     // 读取既有内容（不存在按空处理）
     let existing = match std::fs::read_to_string(npmrc_path) {
         Ok(c) => c,
@@ -136,9 +149,16 @@ fn ensure_npmrc_at(npmrc_path: &PathBuf) -> Result<(), String> {
         Err(e) => return Err(format!("NPMRC_READ_FAILED: {e}")),
     };
 
-    // 已含目标键则无需改动（逐行精确匹配，避免重复追加）
-    if existing.lines().any(|l| l.trim() == NPMRC_KEY) {
-        return Ok(());
+    // 计算需要追加的键：幂等，逐行精确匹配去重
+    let mut additions: Vec<String> = Vec::new();
+    if !existing.lines().any(|l| l.trim() == NPMRC_KEY) {
+        additions.push(NPMRC_KEY.to_string());
+    }
+    if let Some(reg) = registry {
+        let target = format!("{NPMRC_REGISTRY_PREFIX}{reg}");
+        if !existing.lines().any(|l| l.trim() == target) {
+            additions.push(target);
+        }
     }
 
     // 合并写入：保留原内容，末尾另起一行追加目标键
@@ -146,8 +166,10 @@ fn ensure_npmrc_at(npmrc_path: &PathBuf) -> Result<(), String> {
     if !content.is_empty() && !content.ends_with('\n') {
         content.push('\n');
     }
-    content.push_str(NPMRC_KEY);
-    content.push('\n');
+    for add in &additions {
+        content.push_str(add);
+        content.push('\n');
+    }
 
     if let Some(dir) = npmrc_path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("NPMRC_DIR_CREATE_FAILED: {e}"))?;
@@ -165,7 +187,13 @@ fn ensure_npmrc_at(npmrc_path: &PathBuf) -> Result<(), String> {
 /// 从根源上避免这类更新失败。幂等合并：若已存在相同配置或另有其它配置内容，
 /// 一律原样保留，绝不覆盖用户已有的 `.npmrc`。最佳努力调用方不应让失败阻断启动。
 pub(crate) fn ensure_profile_npmrc(app_handle: &AppHandle) -> Result<(), String> {
-    ensure_npmrc_at(&profile_dir(app_handle).join(".npmrc"))
+    // 按「下载插件」界面选择的加速策略解析 npm registry；`auto` 按地域自动
+    // 走 npmmirror/官方，用户显式选 npmmirror/内网自定义时写加速源。
+    let registry = crate::config::npm_registry_url(&crate::config::get_store_dat_setting(app_handle));
+    ensure_npmrc_at(
+        &profile_dir(app_handle).join(".npmrc"),
+        Some(&registry),
+    )
 }
 
 #[cfg(test)]
@@ -183,9 +211,10 @@ mod tests {
     fn npmrc_created_when_missing() {
         let path = temp_npmrc("created");
         let _ = std::fs::remove_file(&path);
-        ensure_npmrc_at(&path).unwrap();
+        ensure_npmrc_at(&path, Some("https://registry.npmmirror.com/")).unwrap();
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.lines().any(|l| l.trim() == NPMRC_KEY));
+        assert!(content.contains("registry=https://registry.npmmirror.com/"));
         std::fs::remove_file(&path).ok();
     }
 
@@ -197,16 +226,32 @@ mod tests {
         std::fs::write(&path, "registry=https://registry.npmjs.org/\n").unwrap();
 
         // 首次：保留既有配置并追加目标键
-        ensure_npmrc_at(&path).unwrap();
+        ensure_npmrc_at(&path, Some("https://registry.npmjs.org/")).unwrap();
         let content = std::fs::read_to_string(&path).unwrap();
+        // registry 是默认官方源 → 不额外追加 registry 行，仅追加 confirmModulesPurge
         assert!(content.contains("registry=https://registry.npmjs.org/"));
         assert_eq!(content.matches(NPMRC_KEY).count(), 1);
 
         // 再次调用：幂等，不重复追加
-        ensure_npmrc_at(&path).unwrap();
+        ensure_npmrc_at(&path, Some("https://registry.npmjs.org/")).unwrap();
         let content2 = std::fs::read_to_string(&path).unwrap();
-        assert!(content.contains("registry=https://registry.npmjs.org/"));
         assert_eq!(content2.matches(NPMRC_KEY).count(), 1);
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn npmrc_writes_nondefault_registry_idempotently() {
+        let path = temp_npmrc("registry");
+        let _ = std::fs::remove_file(&path);
+        ensure_npmrc_at(&path, Some("https://registry.npmmirror.com/")).unwrap();
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("registry=https://registry.npmmirror.com/"));
+        assert_eq!(content.matches("registry=").count(), 1);
+
+        // 幂等：再次调用不重复追加
+        ensure_npmrc_at(&path, Some("https://registry.npmmirror.com/")).unwrap();
+        let content2 = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(content2.matches("registry=").count(), 1);
         std::fs::remove_file(&path).ok();
     }
 
@@ -264,6 +309,8 @@ mod tests {
             default_checked: true,
             win_only: false,
             internal: false,
+            post_install_patch: None,
+            win_inspector: false,
         };
         // scoped 包名与预设 id 不同：以 package 为准
         assert_eq!(

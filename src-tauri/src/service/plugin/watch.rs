@@ -353,6 +353,8 @@ mod tests {
             win_only: false,
             package: None,
             internal: false,
+            post_install_patch: None,
+            win_inspector: false,
         }]
     }
 
@@ -446,6 +448,8 @@ mod tests {
             win_only: false,
             package: None,
             internal: true,
+            post_install_patch: None,
+            win_inspector: false,
         });
         let plugins = parse_plugins(&dir, &presets);
         assert_eq!(plugins.len(), 2);

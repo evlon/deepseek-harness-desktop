@@ -9,6 +9,7 @@ import { useStore } from 'valtio-define'
 import { Empty } from '@/components/empty'
 import { Item } from '@/components/item'
 import { Logs } from '@/components/logs'
+import { ConfigNetwork } from '@/components/config-network'
 import { store } from '@/store'
 import { writeClipboardText } from '@/utils/clipboard'
 import { toast } from '@/utils/toast'
@@ -255,6 +256,11 @@ export function PreinstallSetup() {
                     >
                       {t('preinstall.confirm')}
                     </Button>
+                  </div>
+
+                  {/* 网络加速：安装前选择 npm 源 / GitHub 镜像（默认按地域自动） */}
+                  <div className="border-t border-line/20 pt-3">
+                    <ConfigNetwork />
                   </div>
                 </>
               )}
