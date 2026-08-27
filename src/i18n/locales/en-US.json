@@ -203,6 +203,8 @@
   "accel.npm_auto": "Auto (by region)",
   "accel.npm_official": "Official (registry.npmjs.org)",
   "accel.npm_npmmirror": "Alibaba npmmirror",
+  "accel.npm_governance": "Governance (intranet Verdaccio)",
+  "accel.npm_governance_hint": "URL comes from desktop-config.json npmRegistry; falls back to auto if unset. Selecting it syncs installed deps to this registry.",
   "accel.npm_custom": "Custom (intranet / Verdaccio)",
   "accel.npm_custom_placeholder": "e.g. http://package.onecode.cmict.cloud/repository/npm-group/",
   "accel.npm_effective": "Effective source: {{url}}",

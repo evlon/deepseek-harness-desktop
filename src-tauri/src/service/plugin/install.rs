@@ -579,8 +579,10 @@ fn append_command_output(all_output: &mut String, captured: &str) {
 
 /// 升级单个插件：`dsh plugin --profile <当前档案> update <id>`
 pub async fn update(app_handle: &AppHandle, id: &str) -> Result<(), String> {
-    run_single_plugin_command(app_handle, id, "update", &["update".to_string(), id.to_string()])
-        .await
+    let result =
+        run_single_plugin_command(app_handle, id, "update", &["update".to_string(), id.to_string()])
+            .await;
+    result
 }
 
 /// 卸载单个插件：`dsh plugin --profile <当前档案> remove <id>`

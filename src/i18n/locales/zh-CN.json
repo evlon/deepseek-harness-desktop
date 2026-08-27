@@ -203,6 +203,8 @@
   "accel.npm_auto": "自动（按地区）",
   "accel.npm_official": "官方（registry.npmjs.org）",
   "accel.npm_npmmirror": "阿里 npmmirror",
+  "accel.npm_governance": "治理源（内网 Verdaccio）",
+  "accel.npm_governance_hint": "地址取自 desktop-config.json 的 npmRegistry，未配置则回落自动；选中后已装依赖会同步到该私服。",
   "accel.npm_custom": "自定义（内网 / Verdaccio）",
   "accel.npm_custom_placeholder": "如 http://package.onecode.cmict.cloud/repository/npm-group/",
   "accel.npm_effective": "当前生效源：{{url}}",

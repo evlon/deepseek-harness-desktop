@@ -25,7 +25,7 @@ export interface AccelConfig {
   gh_accel_prefix: string
 }
 
-const NPM_MODES = ['auto', 'official', 'npmmirror', 'custom'] as const
+const NPM_MODES = ['auto', 'official', 'npmmirror', 'governance', 'custom'] as const
 const GH_MODES = ['auto', 'none', 'ghfast', 'ghproxy', 'custom'] as const
 /** 自定义 URL 输入后的防抖延迟：停顿这么久才自动保存，避免逐字请求 */
 const DEBOUNCE_MS = 500
@@ -162,9 +162,17 @@ export function ConfigNetwork() {
                 aria-label={t('accel.npm_custom')}
               />
             </If>
+            <If
+              cond={npmMode === 'governance'}
+              then={(
+                <Description className="text-[10px] text-muted/70">
+                  {t('accel.npm_governance_hint')}
+                </Description>
+              )}
+            />
             <If cond={config != null}>
               <Description className="text-[10px] text-muted/70">
-                {t('accel.npm_effective', { url: config!.npm_registry_url })}
+                {t('accel.npm_effective', { url: config?.npm_registry_url ?? '' })}
               </Description>
             </If>
           </div>
@@ -206,8 +214,8 @@ export function ConfigNetwork() {
             <If cond={config != null}>
               <Description className="text-[10px] text-muted/70">
                 <If
-                  cond={config!.gh_accel_prefix !== ''}
-                  then={t('accel.gh_effective', { prefix: config!.gh_accel_prefix })}
+                  cond={(config?.gh_accel_prefix ?? '') !== ''}
+                  then={t('accel.gh_effective', { prefix: config?.gh_accel_prefix ?? '' })}
                   else={t('accel.gh_effective_direct')}
                 />
               </Description>

@@ -2,10 +2,14 @@
 //!
 //! 与 [`super::region`] 的区别：region 只决定 Node/pnpm/dsh 内核下载的地域镜像；
 //! 本模块处理的是**插件安装**（`dsh plugin add` → pnpm / git）走的包源，用户可在
-//! 「下载插件」界面选择 `auto` / 官方 / npmmirror / 自定义，以及 GitHub 中转策略。
+//! 「下载插件」界面选择 `auto` / 官方 / npmmirror / 治理源 / 自定义，以及 GitHub 中转策略。
 //!
 //! `auto` 策略复用 [`super::detect_region`]：大陆走 npmmirror + ghfast.top，
 //! 海外直连官方源，与内核下载保持一致的开箱即用体验。
+//!
+//! `governance`（治理源）模式：**不硬编码**地址，URL 来自 `desktop-config.json`
+//! 的 `npmRegistry`（内网 Verdaccio）；未配置时回落 `auto`。该模式下从内网私服
+//! 拉取插件包，依赖树的初次同步由 `scripts/sync-to-verdaccio.mjs` 一次性完成。
 
 use super::setting::Setting;
 use super::region::{detect_region, Region};
@@ -22,6 +26,9 @@ pub mod npm_mode {
     pub const NPM_MIRROR: &str = "npmmirror";
     /// 自定义 URL（含内网 Verdaccio）
     pub const CUSTOM: &str = "custom";
+    /// 治理源（内网 Verdaccio）：URL 来自 `desktop-config.json` 的 `npmRegistry`，
+    /// 未配置时回落 `auto`；同时触发已装依赖树同步到该私服
+    pub const GOVERNANCE: &str = "governance";
 }
 
 /// GitHub 加速策略值
@@ -65,6 +72,12 @@ pub fn npm_registry_url(setting: &Setting) -> String {
                 ensure_trailing_slash(url)
             }
         }
+        // 治理源：URL 取 desktop-config.json 的 npmRegistry（内网 Verdaccio）；
+        // 未配置则回落 auto，避免用户选了治理源却没填地址时空跑。
+        Some(npm_mode::GOVERNANCE) => match super::external::npm_registry_override() {
+            Some(u) if !u.trim().is_empty() => ensure_trailing_slash(u.trim().to_string()),
+            _ => auto_npm_registry(),
+        },
         // auto / 未配置
         _ => auto_npm_registry(),
     }
@@ -236,6 +249,23 @@ mod tests {
         let s = npm_setting(Some(npm_mode::CUSTOM), Some("   "));
         // auto 按地域；此处无法断言具体值，只保证非空且不是空串
         assert!(!npm_registry_url(&s).is_empty());
+    }
+
+    #[test]
+    fn governance_uses_desktop_config_override() {
+        // 治理源模式读取 desktop-config.json 的 npmRegistry 作为实际 URL
+        // （注意：external::LOADED 是 OnceLock，首个 _set_for_test 生效，本测试
+        // 依赖此顺序；回落 auto 的路径与 custom 空 URL 等价，已由
+        // custom_empty_falls_back_to_auto 覆盖）
+        crate::config::external::_set_for_test(crate::config::ExternalConfig {
+            npm_registry: Some("https://registry.ict.cmcc/".to_string()),
+            ..Default::default()
+        });
+        let s = npm_setting(Some(npm_mode::GOVERNANCE), None);
+        assert_eq!(
+            npm_registry_url(&s),
+            "https://registry.ict.cmcc/"
+        );
     }
 
     #[test]
