@@ -1,4 +1,4 @@
-import { Description, Input, Label, ListBox, Select, Surface, Spinner } from '@heroui/react'
+import { Description, Input, Label, ListBox, Select, Spinner, Surface } from '@heroui/react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { invoke } from '@tauri-apps/api/core'
 import { useEffect, useRef, useState } from 'react'
@@ -38,14 +38,14 @@ export function ConfigNetwork() {
   const [ghCustom, setGhCustom] = useState<string>('')
 
   // 自定义输入的防抖计时器（组件卸载时清理，避免 setState 泄漏）
-  const npmTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const ghTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const npmTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const ghTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   // 组件卸载时清掉未触发的防抖计时器，避免卸载后仍发起保存
   useEffect(() => {
     return () => {
-      clearTimeout(npmTimer.current)
-      clearTimeout(ghTimer.current)
+      clearTimeout(npmTimerRef.current)
+      clearTimeout(ghTimerRef.current)
     }
   }, [])
 
@@ -102,8 +102,8 @@ export function ConfigNetwork() {
   /** npm 自定义输入：防抖保存 */
   function onNpmCustomChange(value: string) {
     setNpmCustom(value)
-    clearTimeout(npmTimer.current)
-    npmTimer.current = setTimeout(() => {
+    clearTimeout(npmTimerRef.current)
+    npmTimerRef.current = setTimeout(() => {
       persistCurrent({ npmRegistryCustom: value })
     }, DEBOUNCE_MS)
   }
@@ -118,8 +118,8 @@ export function ConfigNetwork() {
   /** GitHub 自定义输入：防抖保存 */
   function onGhCustomChange(value: string) {
     setGhCustom(value)
-    clearTimeout(ghTimer.current)
-    ghTimer.current = setTimeout(() => {
+    clearTimeout(ghTimerRef.current)
+    ghTimerRef.current = setTimeout(() => {
       persistCurrent({ ghAccelCustom: value })
     }, DEBOUNCE_MS)
   }
